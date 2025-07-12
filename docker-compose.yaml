@@ -1,0 +1,315 @@
+volumes:
+  matching-db-data:
+  profile-db-data:
+  iam-db-data:
+  reputation-db-data:
+  analytics-db-data:
+  chat-db-data:
+  kafka-data:
+
+services:
+  matching-routing-service-database:
+    networks:
+      - common_net
+    image: mysql:9.2.0
+    container_name: matching-routing-service-database
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: matching_routing_service
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: password
+    volumes:
+      - matching-db-data:/var/lib/mysql
+    ports:
+      - "3315:3306"
+
+  profile-service-database:
+    networks:
+      - common_net
+    image: mysql:9.2.0
+    container_name: profile-service-database
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: profile_service
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: password
+    volumes:
+      - profile-db-data:/var/lib/mysql
+    ports:
+      - "3320:3306"
+
+  iam-service-database:
+    networks:
+      - common_net
+    image: mysql:9.2.0
+    container_name: iam-service-database
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: identity_access_management_service
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: password
+    volumes:
+      - iam-db-data:/var/lib/mysql
+    ports:
+      - "3325:3306"
+
+  reputation-incentives-service-database:
+    networks:
+      - common_net
+    image: mysql:9.2.0
+    container_name: reputation-incentives-service-database
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: reputation_incentives_service
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: password
+    volumes:
+      - reputation-db-data:/var/lib/mysql
+    ports:
+      - "3330:3306"
+
+  analytics-service-database:
+    networks:
+      - common_net
+    image: mysql:9.2.0
+    container_name: analytics-service-database
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: analytics_service
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: password
+    volumes:
+      - analytics-db-data:/var/lib/mysql
+    ports:
+      - "3335:3306"
+
+  in-trip-communication-service-database:
+    networks:
+      - common_net
+    image: mysql:9.2.0
+    container_name: in-trip-communication-service-database
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: in_trip_communication_service
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: password
+    volumes:
+      - chat-db-data:/var/lib/mysql
+    ports:
+      - "3340:3306"
+
+  # Kafka and Zookeeper
+  zookeeper:
+    networks:
+      - common_net
+    image: confluentinc/cp-zookeeper:7.5.0
+    hostname: zookeeper
+    container_name: zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  broker:
+    networks:
+      - common_net
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: broker
+    restart: unless-stopped
+    depends_on: [zookeeper]
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:29092,PLAINTEXT_HOST://localhost:9092
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+
+  kafka-ui:
+    networks:
+      - common_net
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    restart: unless-stopped
+    depends_on: [broker]
+    environment:
+      KAFKA_CLUSTERS_NAME: local
+      KAFKA_CLUSTERS_BOOTSTRAPSERVERS: broker:29092
+      DYNAMIC_CONFIG_ENABLED: "true"
+    ports:
+      - "8086:8080"
+
+
+  # MICROSERVICIOS UniRide
+  api-gateway:
+    networks:
+      - common_net
+    image: jhosepmyr/api-gateway:1.0.2
+    container_name: api-gateway
+    restart: unless-stopped
+    depends_on: [naming-service, broker]
+    ports:
+      - "80:8765"
+    environment:
+      EUREKA_SERVER_HOST: http://naming-service
+      EUREKA_SERVER_PORT: 8761
+
+  matching-routing-service:
+    networks:
+      - common_net
+    image: jhosepmyr/uni-ride_matching-routing-service:1.3.0
+    container_name: matching-routing-service
+    restart: unless-stopped
+    depends_on:
+      - matching-routing-service-database
+      - broker
+      - naming-service
+    environment:
+      DB_HOST: matching-routing-service-database
+      DB_PORT: 3306
+      DB_NAME: matching_routing_service
+      DB_USER: user
+      DB_PASS: password
+      NEO4J_HOST: 2f5c9cb9.databases.neo4j.io
+      NEO4J_USER: neo4j
+      NEO4J_PASS: RLKPRVeFkZ4Fup_Vooa2HpnXBad-FzmJjtJljB1s8uI
+      NEO4J_DATABASE: neo4j
+      KAFKA_BROKER_HOST: broker
+      KAFKA_BROKER_PORT: 29092
+      EUREKA_SERVER_HOST: http://naming-service
+      EUREKA_SERVER_PORT: 8761
+
+  analytics-service:
+    networks:
+      - common_net
+    image: jhosepmyr/uni-ride_analytics-service:1.1.0
+    container_name: analytics-service
+    restart: unless-stopped
+    depends_on:
+      - analytics-service-database
+      - broker
+      - naming-service
+    environment:
+      DB_HOST: analytics-service-database
+      DB_PORT: 3306
+      DB_NAME: analytics_service
+      DB_USER: user
+      DB_PASS: password
+      KAFKA_HOST: broker
+      KAFKA_PORT: 29092
+      EUREKA_SERVER_HOST: http://naming-service
+      EUREKA_SERVER_PORT: 8761
+
+
+  reputation-incentives-service:
+    networks:
+      - common_net
+    image: jhosepmyr/uni-ride_reputation-incentives-service:1.1.0
+    container_name: reputation-incentives-service
+    restart: unless-stopped
+    depends_on:
+      - reputation-incentives-service-database
+      - broker
+      - naming-service
+    environment:
+      DB_HOST: reputation-incentives-service-database
+      DB_PORT: 3306
+      DB_NAME: reputation_incentives_service
+      DB_USER: user
+      DB_PASS: password
+      KAFKA_HOST: broker
+      KAFKA_PORT: 29092
+      EUREKA_SERVER_HOST: http://naming-service
+      EUREKA_SERVER_PORT: 8761
+
+  iam-service:
+    networks:
+      - common_net
+    image: jhosepmyr/uni-ride_iam-service:1.2.0
+    container_name: iam-service
+    restart: unless-stopped
+    depends_on:
+      - iam-service-database
+      - broker
+      - naming-service
+    environment:
+      DB_HOST: iam-service-database
+      DB_PORT: 3306
+      DB_NAME: identity_access_management_service
+      DB_USER: user
+      DB_PASS: password
+      KAFKA_HOST: broker
+      KAFKA_PORT: 29092
+      EUREKA_SERVER_HOST: http://naming-service
+      EUREKA_SERVER_PORT: 8761
+      SPRING_APPLICATION_JSON: >-
+        {"eureka":{"client":{"serviceUrl":{"defaultZone":"http://naming-service:8761/eureka"}}}}
+      EMAIL_PASS: bgwq uznp pxgy scaw
+      EMAIL_USER: erich56000@gmail.com
+
+  in-trip-communication-service:
+    networks:
+      - common_net
+    image: jhosepmyr/uni-ride_in-trip-communication-service:1.1.0
+    container_name: in-trip-communication-service
+    restart: unless-stopped
+    depends_on:
+      - in-trip-communication-service-database
+      - broker
+      - naming-service
+    environment:
+      DB_HOST: in-trip-communication-service-database
+      DB_PORT: 3306
+      DB_NAME: in_trip_communication_service
+      DB_USER: user
+      DB_PASS: password
+      KAFKA_HOST: broker
+      KAFKA_PORT: 29092
+      EUREKA_SERVER_HOST: http://naming-service
+      EUREKA_SERVER_PORT: 8761
+
+  profile-service:
+    networks:
+      - common_net
+    image: jhosepmyr/uni-ride_profile-service:1.2.0
+    container_name: profile-service
+    restart: unless-stopped
+    depends_on:
+      - profile-service-database
+      - broker
+      - naming-service
+    environment:
+      DB_HOST: profile-service-database
+      DB_PORT: 3306
+      DB_NAME: profile_service
+      DB_USER: user
+      DB_PASS: password
+      KAFKA_HOST: broker
+      KAFKA_PORT: 29092
+      EUREKA_SERVER_HOST: http://naming-service
+      EUREKA_SERVER_PORT: 8761
+
+  naming-service:
+    networks:
+      - common_net
+    image: jhosepmyr/uni-ride_naming-service:1.2.1
+    container_name: naming-service
+    restart: unless-stopped
+    ports:
+      - "8761:8761"
+
+networks:
+  common_net:
+    driver: bridge
